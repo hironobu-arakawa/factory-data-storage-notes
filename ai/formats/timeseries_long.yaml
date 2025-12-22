@@ -1,0 +1,26 @@
+format: timeseries_long
+primary_keys: [source_id, tag_id, ts]
+columns:
+  - name: ts
+    type: timestamp
+    meaning: "observation time"
+  - name: source_id
+    type: string
+  - name: tag_id
+    type: string
+  - name: value
+    type: number|null
+  - name: quality
+    type: int
+    ref: "../concepts/quality_flags.yaml#/quality_flags/quality"
+  - name: unit
+    type: string|null
+  - name: semantic_rev
+    type: string|null
+    ref: "../concepts/identity.yaml#/versioning/semantic_rev"
+optional_columns:
+  - name: ingested_at
+    type: timestamp
+notes:
+  - "Canonical storage-friendly shape for analytics and extensibility."
+  - "Never overwrite; append + backfill allowed (handled elsewhere)."

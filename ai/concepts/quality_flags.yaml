@@ -1,0 +1,10 @@
+quality_flags:
+  quality:
+    type: int
+    meaning:
+      1: normal
+      2: abnormal_or_missing
+      3: corrected_or_imputed
+  rule:
+    - "Quality must travel with the value (or per-tag in wide map)."
+    - "Do not hide corrections; corrected values must be marked explicitly."

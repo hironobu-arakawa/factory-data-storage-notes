@@ -1,0 +1,4 @@
+ts,source_id,tag_id,value,quality,unit,semantic_rev,ingested_at
+2025-12-22T10:00:00+09:00,plantA.edge01,TEMP_001,23.4,1,C,rev12,2025-12-22T10:00:02+09:00
+2025-12-22T10:00:00+09:00,plantA.edge01,TEMP_002,,2,C,rev12,2025-12-22T10:00:02+09:00
+2025-12-22T10:01:00+09:00,plantA.edge01,TEMP_001,23.6,1,C,rev12,2025-12-22T10:01:02+09:00

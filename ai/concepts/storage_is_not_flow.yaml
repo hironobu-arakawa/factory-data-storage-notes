@@ -1,0 +1,7 @@
+concept: storage_is_not_flow
+definition: >
+  Storage is a boundary that freezes responsibility and retention.
+  Flow is mutable and workload-driven.
+implication:
+  - storage_must_not_be_optimized_for_flow
+  - flow_changes_must_not_require_storage_changes

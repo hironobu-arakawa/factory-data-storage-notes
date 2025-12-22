@@ -1,0 +1,3 @@
+snapshot_at,source_id,entity_id,metric_id,value,quality,semantic_rev,dimension
+2025-12-22T10:05:00+09:00,bi_serving,line_A,OEE,0.823,1,rev01,"{shift:day}"
+2025-12-22T10:05:00+09:00,bi_serving,line_A,DOWN_REASON,CHANGEOVER,1,rev07,"{shift:day}"

@@ -1,0 +1,23 @@
+rules:
+  - id: partition_by_time_first
+    when:
+      data_shape: ["timeseries_long", "timeseries_wide", "event_log"]
+    recommend:
+      - "partition by time (day/week) + source_id"
+    reason:
+      - "Operations: retention, backfill, scan locality"
+
+  - id: partition_snapshot_by_snapshot_at
+    when:
+      data_shape: ["snapshot_table"]
+    recommend:
+      - "partition by snapshot_at + entity scope"
+    reason:
+      - "Serving queries are snapshot-time bounded"
+
+  - id: avoid_partition_by_tag_display_name
+    when:
+      identity_field: "display_name"
+    prohibit: true
+    reason:
+      - "Display name is mutable; breaks stability"

@@ -1,0 +1,190 @@
+# ai/decision_rules/semantics_freeze.yaml
+# Purpose:
+# - Decide where/how to "freeze meaning" (Resolution) vs keep it fluid (Fact/Hypothesis)
+# - Define semantic revision (semantic_rev) triggers
+# - Prevent silent meaning drift
+#
+# Key idea:
+# - Meaning can be attached anywhere, but freezing meaning requires ownership + change control.
+
+version: 1
+
+definitions:
+  semantic_freeze:
+    meaning: "Promote a value/metric to an agreed, owned, official interpretation (Resolution)."
+  semantic_rev:
+    meaning: "Revision identifier for meaning contract. Bump when meaning/unit changes."
+
+required_invariants:
+  - id: inv_no_silent_drift
+    statement: "Meaning drift must be visible via semantic_rev/versioning."
+  - id: inv_owner_required
+    statement: "Resolution requires explicit owner and change control."
+  - id: inv_fact_not_frozen
+    statement: "Fact must not embed business-agreed meaning; keep it replayable."
+  - id: inv_quality_explicit
+    statement: "Corrections/imputation must be explicit via quality=3 and lineage."
+
+freeze_levels:
+  - level: "Fact"
+    freeze: false
+    notes: "Observation only; meaning may be reinterpreted later."
+  - level: "Hypothesis"
+    freeze: false
+    notes: "Candidate meaning; never authoritative."
+  - level: "Snapshot"
+    freeze: partial
+    notes: "Serving projection; may embed query convenience, not governance."
+  - level: "Resolution"
+    freeze: true
+    notes: "Official meaning with ownership."
+
+rules:
+  # ---------------------------------------------------------------------------
+  # When to freeze (promote to Resolution)
+  # ---------------------------------------------------------------------------
+  - id: FZ01_freeze_requires_owner_and_change_control
+    priority: 100
+    when:
+      request:
+        any_of: ["make_official", "downstream_consumption", "single_source_of_truth"]
+    then:
+      require:
+        - "explicit_owner"
+        - "change_control defined"
+        - "metric_id stable"
+        - "semantic_rev policy"
+      notes:
+        - "Without these, do not freeze; keep as Hypothesis or Snapshot."
+
+  - id: FZ02_downstream_systems_must_use_resolution
+    priority: 95
+    when:
+      consumer:
+        any_of: ["erp", "mes", "planning", "quality_reporting"]
+      dependency:
+        any_of: ["operational_decision", "financial_or_audit"]
+    then:
+      recommend:
+        - "Resolution only"
+      warn:
+        - "Do not feed Hypothesis into operational/financial decisions."
+
+  - id: FZ03_governed_kpi_definition
+    priority: 92
+    when:
+      operation:
+        any_of: ["kpi_definition", "business_rule"]
+      ownership:
+        present: true
+      change_control:
+        any_of: ["defined", "governed"]
+    then:
+      recommend:
+        - "Freeze as Resolution"
+      require:
+        - "semantic_rev bump rules"
+        - "derivation references to Fact"
+      notes:
+        - "KPI becomes official only through governance."
+
+  # ---------------------------------------------------------------------------
+  # When NOT to freeze
+  # ---------------------------------------------------------------------------
+  - id: NF01_ai_or_probabilistic_must_not_freeze
+    priority: 100
+    when:
+      source:
+        any_of: ["llm", "ml_model", "anomaly_detector"]
+    then:
+      prohibit:
+        - "Freeze as Resolution by default"
+      recommend:
+        - "Keep as Hypothesis; promote only after governance"
+
+  - id: NF02_context_joins_are_volatile
+    priority: 90
+    when:
+      operation:
+        any_of: ["context_join", "semantic_enrichment"]
+      context_change:
+        any_of: ["likely", "unknown"]
+    then:
+      recommend:
+        - "Do not freeze; keep as Hypothesis or compute-on-read"
+      notes:
+        - "Org/asset taxonomy changes are common in factories."
+
+  # ---------------------------------------------------------------------------
+  # semantic_rev bump triggers (meaning changed)
+  # ---------------------------------------------------------------------------
+  - id: SR01_unit_change
+    priority: 100
+    when:
+      change:
+        any_of: ["unit_changed"]
+    then:
+      action:
+        - "bump semantic_rev"
+      notes:
+        - "Unit change is meaning change."
+
+  - id: SR02_tag_reuse_or_repoint
+    priority: 98
+    when:
+      change:
+        any_of: ["tag_reused_for_different_sensor", "plc_program_change_repoints_tag"]
+    then:
+      action:
+        - "bump semantic_rev"
+        - "treat as new identity boundary (new metric_id or new tag_id mapping)"
+      warn:
+        - "Silent reuse breaks history."
+
+  - id: SR03_calculation_logic_change
+    priority: 95
+    when:
+      change:
+        any_of: ["formula_changed", "aggregation_window_changed", "kpi_definition_changed"]
+    then:
+      action:
+        - "bump semantic_rev"
+        - "keep old versions accessible"
+      notes:
+        - "Changing logic changes meaning; version it."
+
+  - id: SR04_threshold_or_classification_change
+    priority: 90
+    when:
+      change:
+        any_of: ["threshold_changed", "anomaly_rule_changed", "classification_label_changed"]
+    then:
+      action:
+        - "bump semantic_rev"
+        - "if AI-derived keep as Hypothesis unless governed"
+      notes:
+        - "These changes alter interpretation."
+
+  # ---------------------------------------------------------------------------
+  # Corrections and guarantees (quality)
+  # ---------------------------------------------------------------------------
+  - id: Q01_imputation_must_be_marked
+    priority: 100
+    when:
+      operation:
+        any_of: ["imputation", "correction", "gap_fill"]
+    then:
+      require:
+        - "quality=3 for corrected values"
+        - "retain original Fact where available"
+        - "record method/spec and effective time"
+      notes:
+        - "Never hide correction; ensure explainability."
+
+outputs:
+  fields:
+    - "freeze_or_not"
+    - "required_governance"
+    - "semantic_rev_policy"
+    - "promotion_path (Hypothesis->Resolution)"
+    - "warnings"

@@ -1,0 +1,9 @@
+conversion: event_to_snapshot
+input: event_log
+output: snapshot_table
+rule:
+  - "Derive snapshot state at snapshot_at by applying events up to that time."
+assumption:
+  - "A state machine exists per (asset_id, event_type) or metric_id mapping."
+notes:
+  - "This is inherently semantic; treat mapping as separate contract."

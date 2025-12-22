@@ -1,0 +1,38 @@
+rules:
+  - id: choose_long_for_flex
+    when:
+      workload: "ad-hoc_analytics"
+      tags: "many_or_growing"
+      schema_change: "often"
+    recommend: "timeseries_long"
+    reason:
+      - "Extensible"
+      - "Filter/aggregate friendly"
+
+  - id: choose_wide_for_serving
+    when:
+      workload: "dashboard_serving"
+      tags: "fixed_set"
+      latency: "strict"
+      consumers: "many"
+    recommend: "timeseries_wide"
+    reason:
+      - "Fast compare and serving"
+      - "But projection only"
+
+  - id: choose_event_for_state
+    when:
+      data_nature: "state_transition"
+      changes: "sparse"
+    recommend: "event_log"
+    reason:
+      - "Change points preserve meaning"
+
+  - id: choose_snapshot_for_distribution
+    when:
+      purpose: "distribution_of_agreed_state_or_kpi"
+      consumers: "many"
+    recommend: "snapshot_table"
+    reason:
+      - "Serving layer"
+      - "Agreed metric contract"

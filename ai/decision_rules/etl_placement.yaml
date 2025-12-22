@@ -1,0 +1,278 @@
+# ai/decision_rules/etl_placement.yaml
+# Purpose:
+# - Decide what processing belongs in which ETL stage
+# - Prevent semantic loss and operational burn
+# - Preserve replay/backfill and data guarantee (quality)
+#
+# Stages (conceptual):
+# - Extract: acquire + minimal decoding needed to persist
+# - Load: persist as Fact without freezing business meaning
+# - Transform: compute projections, aggregates, KPIs, serving shapes
+# - Serve: publish Snapshots/Resolutions for consumers (BI/apps)
+#
+# Notes:
+# - This is not a tool/vendor pipeline definition.
+# - "Placement" is defined by responsibility & reversibility.
+
+version: 1
+
+stages:
+  - name: Extract
+    intent: "Acquire data, preserve context, minimal lossless decode."
+  - name: Load
+    intent: "Persist canonical Fact; ensure replay/backfill."
+  - name: Transform
+    intent: "Create derived artifacts (Snapshot/Resolution/Hypothesis) from canonical sources."
+  - name: Serve
+    intent: "Distribute serving artifacts; enforce access paths and workload separation."
+
+required_invariants:
+  - id: inv_fact_clean
+    statement: "Fact must remain free of business-agreed meaning and irreversible transforms."
+  - id: inv_quality_present
+    statement: "Quality/guarantee state must be present from Load onward, ideally from Extract."
+  - id: inv_replay_possible
+    statement: "Canonical path must allow replay/backfill; transformations must be reproducible."
+  - id: inv_bi_separation
+    statement: "BI-serving workload must not be satisfied by direct Fact query as primary path."
+
+rules:
+  # ---------------------------------------------------------------------------
+  # Extract placement (minimal, lossless, context-preserving)
+  # ---------------------------------------------------------------------------
+  - id: E01_protocol_decode_lossless
+    priority: 100
+    when:
+      operation:
+        any_of: ["protocol_decode", "payload_parse", "binary_unpack"]
+      reversibility:
+        any_of: ["lossless", "reversible"]
+    then:
+      place_in: "Extract"
+      require:
+        - "preserve raw payload reference when feasible"
+        - "emit source_id and ts semantics"
+      notes:
+        - "Decode enough to persist fields, but do not apply business rules."
+
+  - id: E02_timestamp_normalization
+    priority: 95
+    when:
+      operation:
+        any_of: ["timezone_normalize", "timestamp_parse", "precision_align"]
+    then:
+      place_in: "Extract"
+      require:
+        - "define ts=observation_time"
+        - "optional ingested_at=ingestion_time"
+      notes:
+        - "Time contract is foundational; do it before storage."
+
+  - id: E03_identity_binding_minimal
+    priority: 92
+    when:
+      operation:
+        any_of: ["tag_mapping", "id_binding"]
+      mapping_type:
+        any_of: ["lossless_namespace_binding", "stable_id_assignment"]
+    then:
+      place_in: "Extract"
+      require:
+        - "tag_id stable within namespace"
+        - "semantic_rev available when meaning changes"
+      warn:
+        - "If mapping embeds business meaning, move to Transform and treat as Hypothesis/Resolution."
+      notes:
+        - "Bind stable IDs, but avoid business semantics."
+
+  - id: E04_quality_capture
+    priority: 90
+    when:
+      operation:
+        any_of: ["quality_capture", "status_code_mapping"]
+    then:
+      place_in: "Extract"
+      require:
+        - "quality flag defined (1 normal / 2 abnormal_or_missing / 3 corrected)"
+      notes:
+        - "Data guarantee must travel with values; capture as early as possible."
+
+  # ---------------------------------------------------------------------------
+  # Load placement (canonical Fact persistence)
+  # ---------------------------------------------------------------------------
+  - id: L01_persist_fact_append_only
+    priority: 100
+    when:
+      artifact:
+        any_of: ["fact"]
+    then:
+      place_in: "Load"
+     require:
+        - "append_only or versioned policy"
+        - "late_arrival allowed"
+        - "backfill allowed"
+      forbid:
+        - "overwrite_in_place"
+        - "kpi_definition"
+        - "aggregation_over_time"
+      notes:
+        - "Fact is the replay source. Keep it clean."
+
+  - id: L02_store_lineage_metadata
+    priority: 85
+    when:
+      operation:
+        any_of: ["lineage_record", "derivation_spec_record"]
+    then:
+      place_in: "Load"
+      notes:
+        - "Record enough metadata to reproduce downstream artifacts."
+
+  # ---------------------------------------------------------------------------
+  # Transform placement (derived artifacts creation)
+  # ---------------------------------------------------------------------------
+  - id: T01_aggregation_rollup_pivot
+    priority: 100
+    when:
+      operation:
+        any_of: ["aggregation_over_time", "rollup", "materialization", "pivot", "denormalization_for_query"]
+    then:
+      place_in: "Transform"
+      output_class:
+        default: "Snapshot"
+      require:
+        - "rebuildable_from Fact or Resolution"
+        - "define aggregation_window"
+        - "refresh policy"
+      notes:
+        - "Aggregations are projections unless governed as Resolution."
+
+  - id: T02_kpi_definition_or_business_rule
+    priority: 98
+    when:
+      operation:
+        any_of: ["kpi_definition", "business_rule", "domain_mapping"]
+    then:
+      place_in: "Transform"
+      output_class:
+        if_owner_and_governed: "Resolution"
+        else: "Hypothesis"
+      require:
+        - "owner + change control to become Resolution"
+        - "semantic_rev bump when meaning changes"
+      notes:
+        - "Do not freeze business meaning in Extract/Load."
+
+  - id: T03_imputation_correction
+    priority: 96
+    when:
+      operation:
+        any_of: ["imputation", "correction", "gap_fill"]
+    then:
+      place_in: "Transform"
+      output_class:
+        default: "Snapshot"
+        if_governed_for_reporting: "Resolution"
+      require:
+        - "mark corrected as quality=3"
+        - "retain original Fact when available"
+        - "record method/spec for reproducibility"
+      notes:
+        - "Corrections must be explicit. Do not overwrite Fact."
+
+  - id: T04_ai_inference
+    priority: 95
+    when:
+      operation:
+        any_of: ["llm_inference", "ml_inference", "anomaly_detection"]
+    then:
+      place_in: "Transform"
+      output_class:
+        default: "Hypothesis"
+      require:
+        - "link to input Fact/Resolution references"
+        - "reproducible model/version"
+      notes:
+        - "AI output stays Hypothesis unless explicitly governed."
+
+  - id: T05_semantic_enrichment_non_governed
+    priority: 90
+    when:
+      operation:
+        any_of: ["semantic_enrichment", "context_join", "asset_context_attach"]
+      change_control:
+        any_of: ["missing", "undefined"]
+    then:
+      place_in: "Transform"
+      output_class:
+        default: "Hypothesis"
+      warn:
+        - "Context can change; do not freeze without governance."
+      notes:
+        - "Attach as hypothesis metadata or compute on demand."
+
+  # ---------------------------------------------------------------------------
+  # Serve placement (distribution & access policy)
+  # ---------------------------------------------------------------------------
+  - id: S01_bi_serving_access_policy
+    priority: 100
+    when:
+      consumer:
+        any_of: ["bi", "dashboard", "reporting_ui"]
+      latency:
+        any_of: ["strict", "interactive"]
+    then:
+      place_in: "Serve"
+      require:
+        - "serve from Snapshot or Resolution"
+      forbid:
+        - "direct_fact_query as primary path"
+      recommend:
+        - "app_dedicated_db or serving_store"
+      notes:
+        - "Workload separation is mandatory for BI performance."
+
+  - id: S02_api_distribution_of_official_numbers
+    priority: 95
+    when:
+      consumer:
+        any_of: ["api", "downstream_system", "mes", "erp", "planning"]
+      data_nature:
+        any_of: ["official_metric", "agreed_number", "kpi"]
+    then:
+      place_in: "Serve"
+      require:
+        - "Resolution only"
+        - "semantic_rev and change announcement"
+      notes:
+        - "Downstream systems must consume Resolution, not Hypothesis."
+
+conflict_rules:
+  - id: C01_business_logic_in_extract
+    when:
+      proposed_stage: "Extract"
+      operation:
+        any_of: ["kpi_definition", "business_rule"]
+    then:
+      reject: true
+      reason:
+        - "Business meaning freeze must be Transform with governance."
+
+  - id: C02_overwrite_fact
+    when:
+      proposed_stage: "Load"
+      operation:
+        any_of: ["overwrite_in_place", "update_fact_values"]
+    then:
+      reject: true
+      reason:
+        - "Fact must remain append-only; corrections are separate artifacts with quality=3."
+
+outputs:
+  fields:
+    - "recommended_stage"
+    - "output_class (Fact/Snapshot/Resolution/Hypothesis)"
+    - "required_metadata"
+    - "reproducibility_requirements"
+    - "quality_handling"
+    - "warnings"

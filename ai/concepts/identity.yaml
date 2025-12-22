@@ -1,0 +1,17 @@
+identity:
+  tag_id:
+    definition: "Stable identifier representing the same measurement meaning over time."
+    must:
+      - "stable across display-name changes"
+      - "unique within a source namespace"
+    should:
+      - "support versioning (semantic_rev) when meaning changes"
+  source_id:
+    definition: "Emitter identity (edge node / gateway / system) that defines collection context."
+  asset_id:
+    definition: "Equipment/asset identity, optional but recommended for event/snapshot."
+versioning:
+  semantic_rev:
+    definition: "Semantic revision of meaning contract. Change when unit/meaning changes."
+    rule:
+      - "If semantic meaning changes, bump semantic_rev and treat as new identity boundary."

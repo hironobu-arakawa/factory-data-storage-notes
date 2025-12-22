@@ -1,0 +1,21 @@
+rules:
+  - id: bi_never_query_fact_directly
+    when:
+      workload: "bi_serving"
+      latency: "strict"
+    prohibit:
+      - "direct query to canonical long/event store"
+    recommend:
+      - "snapshot_table or controlled wide projection"
+    reason:
+      - "Workload separation"
+      - "Predictable performance"
+
+  - id: bi_metrics_should_be_agreed
+    when:
+      output_is_kpi: true
+    recommend:
+      - "snapshot_table with metric_id contract"
+    reason:
+      - "Avoid per-dashboard re-definition"
+      - "Enable governance by contract"

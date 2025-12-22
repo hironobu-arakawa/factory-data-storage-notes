@@ -1,0 +1,8 @@
+conversion: long_to_wide
+input: timeseries_long
+output: timeseries_wide
+rule:
+  - "Pivot by (source_id, ts) to values[tag_id]."
+constraints:
+  - "Requires controlled tag set; otherwise matrix becomes sparse/unbounded."
+  - "If multiple rows exist for same key, resolve via latest ingested_at or deterministic tie-break."

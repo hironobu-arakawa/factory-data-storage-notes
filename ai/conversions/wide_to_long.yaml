@@ -1,0 +1,9 @@
+conversion: wide_to_long
+input: timeseries_wide
+output: timeseries_long
+rule:
+  - "For each (source_id, ts), expand values[tag_id] into rows."
+  - "quality/tag metadata maps expand accordingly."
+edge_cases:
+  - "Missing tag_id in values => no row emitted (not a null value)."
+  - "Null value with quality=2 => explicit missing/corrupted reading."

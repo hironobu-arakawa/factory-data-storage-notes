@@ -1,0 +1,14 @@
+shape_types:
+  - name: timeseries_long
+    intent: "filter/aggregate/extend; many tags; schema-flexible"
+    canonical: true
+  - name: timeseries_wide
+    intent: "matrix compare; fixed tag set; visualization/serving"
+    canonical: false
+    note: "projection/serving; do not use as canonical identity store"
+  - name: event_log
+    intent: "state transitions; change points; audit and explanation"
+    canonical: true
+  - name: snapshot_table
+    intent: "distribution of agreed states/KPI; many consumers"
+    canonical: false

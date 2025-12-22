@@ -1,0 +1,25 @@
+format: snapshot_table
+primary_keys: [source_id, snapshot_at, entity_id, metric_id]
+columns:
+  - name: snapshot_at
+    type: timestamp
+    meaning: "time of snapshot generation or effective time"
+  - name: source_id
+    type: string
+  - name: entity_id
+    type: string
+    meaning: "asset/line/area/etc. depending on scope"
+  - name: metric_id
+    type: string
+    meaning: "agreed KPI/metric identifier"
+  - name: value
+    type: number|string|boolean|null
+  - name: quality
+    type: int
+optional_columns:
+  - name: semantic_rev
+    type: string|null
+  - name: dimension
+    type: object|null
+notes:
+  - "Snapshot is a serving shape. Intended for BI / distribution to many consumers."

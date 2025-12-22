@@ -1,0 +1,18 @@
+timestamp_rules:
+  timezone:
+    required: true
+    default: "Asia/Tokyo"
+  ts:
+    meaning: "observation timestamp (when the value/event is considered to occur)"
+  ingested_at:
+    meaning: "ingestion timestamp (when the system received it)"
+    required: false
+precision:
+  ts:
+    allowed: ["second", "millisecond"]
+ordering:
+  rule:
+    - "Do not assume strict monotonicity per tag_id; late arrivals exist."
+nulls_and_gaps:
+  rule:
+    - "Gaps are not errors by default; quality flags carry the state."
