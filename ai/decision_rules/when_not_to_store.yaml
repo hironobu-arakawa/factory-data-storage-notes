@@ -1,0 +1,138 @@
+version: 1.0
+kind: storage_decision_rules
+id: when_not_to_store
+
+intent:
+  - Justify decisions to not store data
+  - Prevent irreversible semantic freeze
+  - Keep human responsibility explicit in AI-assisted systems
+
+principle:
+  - Storage is irreversible
+  - Storage fixes responsibility
+  - Deferring storage is a valid design decision
+
+decision_flow:
+
+  - step: meaning_stability
+    question: >
+      Is the meaning of this data stable and agreed at this moment?
+    if_no:
+      decision: do_not_store
+      reason: meaning_not_fixed
+      note: >
+        Data with unstable meaning must not be stored as fact.
+        Storing freezes a temporary interpretation.
+    if_yes: next
+
+  - step: reproducibility
+    question: >
+      Can this data be reproduced from upstream sources?
+    if_yes:
+      decision: consider_not_storing
+      reason: reproducible_data
+      note: >
+        Reproducible data does not require irreversible storage.
+        Prefer recomputation or delayed storage.
+    if_no: next
+
+  - step: data_quality_state
+    question: >
+      Is the data quality explicitly known at storage time?
+    options:
+      - normal
+      - abnormal
+      - corrected
+      - unknown
+    if: unknown
+    decision: do_not_store
+    reason: quality_not_defined
+    note: >
+      Unknown quality must not be stored as fact.
+      Store as raw only or defer storage.
+
+  - step: responsibility_owner
+    question: >
+      Who owns responsibility for correctness after storage?
+    options:
+      - upstream_system
+      - storage_layer
+      - downstream_application
+      - undefined
+    if: undefined
+    decision: do_not_store
+    reason: responsibility_unclear
+    note: >
+      Data without explicit responsibility must not be stored.
+
+  - step: usage_horizon
+    question: >
+      Is this data intended for long-term use?
+    options:
+      - long_term
+      - temporary
+      - unknown
+    if: temporary
+    decision: do_not_store
+    reason: short_lived_usage
+    note: >
+      Temporary usage does not justify irreversible storage.
+
+  - step: storage_shape
+    question: >
+      Is this data already shaped for distribution or serving?
+    options:
+      - raw
+      - normalized
+      - projection
+      - snapshot
+    if:
+      - projection
+      - snapshot
+    decision: do_not_store
+    reason: serving_shape_detected
+    note: >
+      Distribution shapes must not be stored as canonical data.
+
+  - step: urgency_bias
+    question: >
+      Is the motivation for storage driven by urgency or uncertainty?
+    indicators:
+      - "store for now"
+      - "just in case"
+      - "we will decide later"
+    if_detected: true
+    decision: do_not_store
+    reason: decision_deferral
+    note: >
+      Storage must not be used to defer human judgment.
+
+final_decisions:
+  - store_now
+  - store_later
+  - do_not_store
+  - store_as_raw_only
+
+guidance:
+  do_not_store:
+    meaning: >
+      Preserve future optionality.
+      Avoid freezing interpretation and responsibility.
+  store_as_raw_only:
+    meaning: >
+      Keep data without semantic commitment.
+      Interpretation is explicitly deferred.
+  store_later:
+    meaning: >
+      Storage decision is postponed until meaning and responsibility stabilize.
+
+ai_usage_notes:
+  - Absence of storage is an intentional decision
+  - Stored data must not be treated as neutral
+  - AI must not override "do_not_store" decisions
+
+human_review_required_when:
+  - decision == store_now
+  - decision == store_later
+  - responsibility_owner changes
+  - meaning_definition updates

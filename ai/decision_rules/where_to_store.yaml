@@ -1,324 +1,109 @@
-# ai/decision_rules/where_to_store.yaml
-# Purpose:
-# - Classify incoming data into: Fact / Snapshot / Resolution / Hypothesis
-# - Enforce "storage-is-not-flow" and workload separation
-# - Provide deterministic decision rules for design assistant
-#
-# Notes:
-# - This file intentionally avoids product/vendor guidance.
-# - If multiple rules match, use "priority" (higher wins). If still ambiguous, choose the safer class:
-#   Hypothesis > Snapshot > Fact > Resolution (i.e., avoid freezing meaning too early).
+version: 1.0
+kind: storage_decision_rules
+id: where_to_store_factory_data
 
-version: 1
-defaults:
-  timezone: "Asia/Tokyo"
-  quality_flags:
-    1: normal
-    2: abnormal_or_missing
-    3: corrected_or_imputed
+intent:
+  - Decide whether data should be stored
+  - Decide where responsibility is fixed
+  - Avoid irreversible semantic freeze
 
-classification:
-  classes:
-    - name: Fact
-      canonical: true
-      intent: "Raw observation / trace / replayable truth. Append-only. Meaning not frozen."
-    - name: Snapshot
-      canonical: false
-      intent: "Serving projection for performance (BI/search). Rebuildable from Fact/Resolution."
-    - name: Resolution
-      canonical: true
-      intent: "Agreed, owned, official values. Meaning frozen with explicit governance."
-    - name: Hypothesis
-      canonical: false
-      intent: "Provisional inference/AI output/experimental logic. Always rebuildable, never authoritative."
+assumptions:
+  - Data meaning may change after collection
+  - Not all data needs to be stored
+  - Storage implies responsibility
 
-tie_break:
-  # When multiple rules match at the same priority.
-  order: ["Hypothesis", "Snapshot", "Fact", "Resolution"]
-  rationale: "Avoid premature semantic freeze; prefer rebuildable artifacts."
+decision_flow:
 
-required_invariants:
-  - id: inv_quality_travels
-    statement: "Quality/guarantee state must travel with stored values; do not hide corrections."
-  - id: inv_storage_not_flow
-    statement: "Do not optimize canonical storage for flow latency; separate workloads instead."
-  - id: inv_no_bi_on_fact
-    statement: "BI serving must not directly query Fact as the primary path for latency-critical use."
-  - id: inv_irreversible_separation
-    statement: "Irreversible or business-agreed transforms must not contaminate Fact."
+  - step: is_fact_stable
+    question: >
+      Is the meaning of this data stable at the time of storage?
+    if_yes: next
+    if_no: do_not_store
+    note: >
+      If meaning depends on future interpretation,
+      storing it freezes assumptions too early.
 
-rules:
-  # ---------------------------------------------------------------------------
-  # Hypothesis rules (highest safety: never freeze)
-  # ---------------------------------------------------------------------------
-  - id: H01_ai_or_probabilistic_output
-    priority: 100
+  - step: is_reproducible
+    question: >
+      Can this data be reproduced from upstream sources?
+    if_yes: consider_not_storing
+    if_no: next
+    note: >
+      Irreproducible data has higher storage priority.
+
+  - step: responsibility_owner
+    question: >
+      Who takes responsibility for correctness after storage?
+    options:
+      - upstream_system
+      - storage_layer
+      - downstream_application
+    rule: >
+      Responsibility must be explicit.
+      If unclear, storage is deferred.
+
+  - step: quality_state
+    question: >
+      Is data quality known at storage time?
+    options:
+      - normal
+      - abnormal
+      - corrected
+      - unknown
+    rule: >
+      Unknown quality must not be stored as fact.
+      Mark or delay storage.
+
+  - step: usage_scope
+    question: >
+      Is this data used for operations or analysis only?
+    options:
+      - operations
+      - analytics
+      - unknown
+    rule: >
+      Analytics-only usage does not justify irreversible storage.
+
+storage_targets:
+
+  db:
     when:
-      source:
-        any_of: ["llm", "ml_model", "anomaly_detector", "classifier", "predictor"]
-    then:
-      classify_as: "Hypothesis"
-      require:
-        - "link_to_inputs (fact references) or reproducible spec"
-      notes:
-        - "AI outputs are candidates; never authoritative by default."
-        - "If later approved, promote via governance into Resolution (new artifact)."
+      - fact_is_stable
+      - responsibility_defined
+    risks:
+      - semantic_freeze
+      - schema_lock
 
-  - id: H02_experimental_or_unvalidated_logic
-    priority: 95
+  tsdb:
     when:
-      reliability:
-        any_of: ["experimental", "unvalidated", "unknown"]
-    then:
-      classify_as: "Hypothesis"
-      notes:
-        - "Do not store experimental outputs as Fact or Resolution."
+      - time_series
+      - operational_monitoring
+    risks:
+      - false_precision
+      - retention_assumptions
 
-  - id: H03_business_rule_without_owner
-    priority: 90
+  object_storage:
     when:
-      transform:
-        any_of: ["business_rule", "domain_mapping", "kpi_definition"]
-      ownership:
-        missing: true
-    then:
-      classify_as: "Hypothesis"
-      warn:
-        - "Resolution requires explicit owner and change control."
+      - raw_data
+      - future_reinterpretation_expected
+    risks:
+      - forgotten_context
+      - uncontrolled_usage
 
-  # ---------------------------------------------------------------------------
-  # Resolution rules (freeze meaning only with ownership)
-  # ---------------------------------------------------------------------------
-  - id: R01_official_kpi_or_agreed_number
-    priority: 80
-    when:
-      data_nature:
-        any_of: ["kpi", "official_metric", "agreed_number"]
-      ownership:
-        present: true
-      change_control:
-        any_of: ["defined", "governed"]
-    then:
-      classify_as: "Resolution"
-      require:
-        - "explicit_owner"
-        - "metric_id (stable identifier)"
-        - "semantic_rev (versioning when meaning/unit changes)"
-      notes:
-        - "Resolution is the number upper systems must consume."
-        - "If meaning changes, bump semantic_rev and keep history."
+do_not_store_conditions:
+  - meaning_not_fixed
+  - responsibility_unclear
+  - quality_unknown
+  - reproducible_and_low_value
 
-  - id: R02_settlement_or_audit_grade
-    priority: 78
-    when:
-      usage:
-        any_of: ["audit", "settlement", "reporting"]
-      ownership:
-        present: true
-    then:
-      classify_as: "Resolution"
-      require:
-        - "immutability or versioning policy"
-        - "explainability (derivation references)"
-      notes:
-        - "Audit-grade outputs require governance; do not treat as Snapshot."
+output:
+  decision:
+    - store_now
+    - store_later
+    - do_not_store
+    - store_as_raw_only
 
-  - id: R03_manual_override_approved
-    priority: 76
-    when:
-      source:
-        any_of: ["manual_override", "human_entry"]
-      approval:
-        any_of: ["approved", "two_person_rule", "audited"]
-    then:
-      classify_as: "Resolution"
-      require:
-        - "who_changed"
-        - "why_changed"
-        - "effective_time"
-      notes:
-        - "Manual overrides can be Resolution if governed; otherwise Hypothesis."
-
-  # ---------------------------------------------------------------------------
-  # Fact rules (canonical trace; keep it clean)
-  # ---------------------------------------------------------------------------
-  - id: F01_raw_observation_sensor_or_log
-    priority: 70
-    when:
-      data_nature:
-        any_of: ["sensor_observation", "raw_log", "telemetry", "measurement"]
-      transform:
-        none_of: ["business_rule", "kpi_definition", "aggregation_over_time"]
-    then:
-      classify_as: "Fact"
-      require:
-        - "source_id"
-        - "timestamp (ts)"
-        - "quality flag"
-      allow:
-        - "late_arrival"
-        - "backfill"
-      forbid:
-        - "overwrite_in_place"
-        - "embedding_business_meaning"
-      notes:
-        - "Fact is append-only truth suitable for replay."
-
-  - id: F02_event_as_fact
-    priority: 68
-    when:
-      data_nature:
-        any_of: ["event", "state_transition", "alarm"]
-      transform:
-        none_of: ["kpi_definition", "business_rule"]
-    then:
-      classify_as: "Fact"
-      require:
-        - "event_type"
-        - "asset_id or tag_id"
-        - "ts"
-        - "quality flag"
-      notes:
-        - "Events are also Fact (trace), unless they are aggregated/serving projections."
-
-  - id: F03_derived_but_replayable_and_reversible
-    priority: 66
-    when:
-      transform:
-        any_of: ["unit_normalization", "protocol_decode", "parsing", "lossless_mapping"]
-      reversibility:
-        any_of: ["reversible", "lossless"]
-      ownership:
-        any_of: ["platform_team", "engineering"]
-    then:
-      classify_as: "Fact"
-      require:
-        - "derivation_spec (how it was produced)"
-      notes:
-        - "Lossless normalization may be treated as Fact, but do not freeze business meaning."
-
-  # ---------------------------------------------------------------------------
-  # Snapshot rules (serving/performance projections)
-  # ---------------------------------------------------------------------------
-  - id: S01_bi_serving_requires_projection
-    priority: 60
-    when:
-      workload:
-        any_of: ["bi_serving", "dashboard", "reporting_ui"]
-      latency:
-        any_of: ["strict", "interactive"]
-      consumers:
-        any_of: ["many", "unknown"]
-    then:
-      classify_as: "Snapshot"
-      require:
-        - "rebuildable_from (Fact or Resolution)"
-        - "refresh_policy (schedule or trigger)"
-      warn:
-        - "Do not make Snapshot the only source of truth."
-      notes:
-        - "This addresses performance by workload separation, not by contaminating Fact."
-
-  - id: S02_pre_aggregated_for_speed
-    priority: 58
-    when:
-      transform:
-        any_of: ["aggregation_over_time", "rollup", "materialization", "pivot", "denormalization_for_query"]
-    then:
-      classify_as: "Snapshot"
-      require:
-        - "aggregation_window"
-        - "rebuildable_from"
-      notes:
-        - "Aggregations are serving artifacts unless they are governed KPIs (then Resolution)."
-
-  - id: S03_application_dedicated_db
-    priority: 56
-    when:
-      separation:
-        any_of: ["app_dedicated_db", "serving_db", "read_replica"]
-    then:
-      classify_as: "Snapshot"
-      notes:
-        - "AP専用DBは Snapshot の置き場として正当。"
-        - "Data unification != Query unification."
-
-  # ---------------------------------------------------------------------------
-  # Escalation / conflict / safety rules
-  # ---------------------------------------------------------------------------
-  - id: X01_irreversible_transform_without_governance
-    priority: 85
-    when:
-      transform:
-        any_of: ["irreversible", "lossy", "aggregation_over_time", "kpi_definition"]
-      change_control:
-        any_of: ["missing", "undefined"]
-    then:
-      classify_as: "Snapshot"
-      warn:
-        - "Irreversible output without governance must not become Resolution."
-        - "Keep Fact clean and rebuild Snapshot when rules change."
-      notes:
-        - "If it must be official, add ownership and promote to Resolution."
-
-  - id: X02_bi_attempts_direct_fact_query
-    priority: 75
-    when:
-      workload:
-        any_of: ["bi_serving", "dashboard"]
-      proposed_access:
-        any_of: ["direct_fact_query"]
-    then:
-      keep_classification: true
-      warn:
-        - "BI direct query on Fact is disallowed as primary serving path."
-      recommend:
-        - "Create Snapshot (serving) or Resolution (governed KPI) for BI."
-
-  - id: X03_missing_identity_or_time
-    priority: 92
-    when:
-      missing_fields:
-        any_of: ["source_id", "ts"]
-    then:
-      classify_as: "Hypothesis"
-      warn:
-        - "Without Identity/Time contract, storage classification is unsafe."
-      require:
-        - "define source_id and ts semantics first"
-
-  - id: X04_quality_missing
-    priority: 91
-    when:
-      missing_fields:
-        any_of: ["quality"]
-    then:
-      keep_classification: true
-      warn:
-        - "Quality/guarantee state is required; add quality flag or mapping."
-      require:
-        - "quality flag definition (1 normal / 2 abnormal_or_missing / 3 corrected_or_imputed)"
-
-  - id: X05_correction_or_imputation_present
-    priority: 72
-    when:
-      transform:
-        any_of: ["imputation", "correction", "gap_fill"]
-    then:
-      keep_classification: true
-      require:
-        - "mark corrected values with quality=3"
-        - "retain original observation as Fact when available"
-      notes:
-        - "Corrections must not be hidden; preserve lineage."
-
-outputs:
-  # Standard assistant output expectations (used by storage_design_assistant.md)
-  fields:
-    - "classification"
-    - "canonical_or_serving"
-    - "ownership_and_change_control"
-    - "quality_handling"
-    - "rebuildability"
-    - "separation_strategy"
-    - "warnings"
+notes:
+  - Storage is irreversible
+  - Deferring storage is a valid decision
+  - "Just in case" is not a rule

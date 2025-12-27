@@ -58,6 +58,72 @@ factory-data-storage-notes/
 ├─ human/ # 人が読むための設計メモ・考え方
 └─ ai/ # AIに読ませる前提の判断ルール・補助資料
 
+---
+
+## How to read this repository
+
+This repository is structured as a **decision guide**, not a reference manual.
+
+### Human-readable design notes
+
+Read in order:
+
+1. **human/00_introduction.md**  
+   → なぜ「保存」は技術ではなく意思決定なのか
+
+2. **human/01_common_storage_mistakes.md**  
+   → 保存判断で人が必ず踏む失敗パターン
+
+3. **human/02_when_not_to_store.md**  
+   → 「保存しない」と判断してよい条件
+
+4. **human/03_where_storage_freezes_responsibility.md**  
+   → DB / TSDB / Object Storage が固定する責任の違い
+
+5. **human/04_storage_and_future_ai.md**  
+   → AI時代に保存判断が最重要になる理由
+
+These documents form a single logical flow and are meant to be read sequentially.
+
+---
+
+### AI-oriented decision rules
+
+- **ai/decision_rules/where_to_store.yaml**  
+  → Decide *where* data may be stored when storage is justified
+
+- **ai/decision_rules/when_not_to_store.yaml**  
+  → Explicit rules for *not storing* data and preserving optionality
+
+These rules are intended to be consumed by:
+- LLM-based design reviewers
+- AI-assisted data platform agents
+- Automated architecture checks
+
+AI must respect **do_not_store** decisions defined here.
+
+---
+
+## Relation to other repositories
+
+This repository focuses on **storage decisions only**.
+
+For related topics:
+
+- Data shapes / formats  
+  → see **factory-data-shapes**
+
+- DB layer responsibilities  
+  → see **db-layer-design-principles**
+
+- Async-first system design  
+  → see **ot-it-async-design-appendix**
+
+Each repository handles a different decision layer.
+They are designed to be used together, but not merged.
+
+---
+
 
 ### human/
 
